@@ -15,6 +15,9 @@
               "time = true"         '(= time true)
               "ttl = 64"            '(= ttl 64)
 
+              ; Custom attributes
+              "pid = 1"             '(= pid 1)
+
               ; Literals
               "true"  true
               "false" false
