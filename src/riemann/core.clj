@@ -180,16 +180,54 @@
               integration now."
               ((:index core) event)))
 
-; Provides an accessor for an inner index
-(defprotocol WrappedIndex
-  (inner [this]))
 
-(defn- get-inner-index
-  "Get the inner index of a wrapped index"
-  [wrapped]
-  (if (instance? riemann.core.WrappedIndex wrapped)
-    (inner wrapped)
-    wrapped))
+(defrecord WrappedIndex [index registry]
+  Object
+  (equals [this other]
+    (= index (:index other)))
+  Index
+  (clear [this]
+    (index/clear index))
+  (delete [this event]
+    (index/delete index event))
+  (delete-exactly [this event]
+    (index/delete-exactly index event))
+  (expire [this]
+    (index/expire index))
+  (search [this query-ast]
+    (index/search index query-ast))
+  (update [this event]
+    (when-not (:time event)
+      (throw (ex-info "cannot index event with no time"
+                      {:event event})))
+    (index/update index event)
+    (when registry
+      (ps/publish! registry "index" event)))
+  (lookup [this host service]
+    (index/lookup index host service))
+
+  clojure.lang.Seqable
+  (seq [this]
+    (seq index))
+
+  ServiceEquiv
+  (equiv? [this other]
+    (service/equiv? index (:index other)))
+
+  Service
+  (conflict? [this other]
+    (service/conflict? index (:index other)))
+  (reload! [this new-core]
+    (service/reload! index new-core))
+  (start! [this]
+    (service/start! index))
+  (stop! [this]
+    (service/stop! index))
+
+  clojure.lang.IFn
+  (invoke [this event]
+    (index/update this event))
+  )
 
 (defn wrap-index
   "Yield a wrapper to an index, exposing the same protocols as well
@@ -199,55 +237,7 @@
   ([source]
      (wrap-index source nil))
   ([source registry]
-     (reify
-       Object
-       (equals [this other]
-         (= source (get-inner-index other)))
-       WrappedIndex
-       (inner [this]
-         source)
-       Index
-       (clear [this]
-         (index/clear source))
-       (delete [this event]
-         (index/delete source event))
-       (delete-exactly [this event]
-         (index/delete-exactly source event))
-       (expire [this]
-         (index/expire source))
-       (search [this query-ast]
-         (index/search source query-ast))
-       (update [this event]
-         (when-not (:time event)
-           (throw (ex-info "cannot index event with no time"
-                           {:event event})))
-         (index/update source event)
-         (when registry
-           (ps/publish! registry "index" event)))
-       (lookup [this host service]
-         (index/lookup source host service))
-
-       clojure.lang.Seqable
-       (seq [this]
-         (seq source))
-
-       ServiceEquiv
-       (equiv? [this other]
-         (service/equiv? source (get-inner-index other)))
-
-       Service
-       (conflict? [this other]
-         (service/conflict? source (get-inner-index other)))
-       (reload! [this new-core]
-         (service/reload! source new-core))
-       (start! [this]
-         (service/start! source))
-       (stop! [this]
-         (service/stop! source))
-
-       clojure.lang.IFn
-       (invoke [this event]
-         (index/update this event)))))
+   (WrappedIndex. source registry)))
 
 
 (defn delete-from-index
